@@ -1,13 +1,30 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
-export const GoalForm = () => {
-  const [formData, setFormData] = useState({
-    weight: "",
-    height: "",
-    age: "",
-    gender: "male",
-  });
+export interface GoalProfile {
+  weight: string;
+  height: string;
+  age: string;
+  gender: "male" | "female" | "other";
+  calorieGoal: string;
+}
+
+interface GoalFormProps {
+  onGeneratePlan: (profile: GoalProfile) => void;
+  initialProfile: GoalProfile;
+  isEditing?: boolean;
+}
+
+export const GoalForm = ({
+  onGeneratePlan,
+  initialProfile,
+  isEditing = false,
+}: GoalFormProps) => {
+  const [formData, setFormData] = useState<GoalProfile>(initialProfile);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setFormData(initialProfile);
+  }, [initialProfile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,8 +40,8 @@ export const GoalForm = () => {
       //   headers: { 'Content-Type': 'application/json' },
       //   body: JSON.stringify(formData),
       // });
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      alert("Goals saved! Logic handed off to Flask.");
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      onGeneratePlan(formData);
     } catch (err) {
       console.error("Connection to Flask failed", err);
     } finally {
@@ -35,7 +52,10 @@ export const GoalForm = () => {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
   };
 
   return (
@@ -43,7 +63,7 @@ export const GoalForm = () => {
       <header className="mb-8">
         <h2 className="text-2xl font-bold text-slate-900">Personal Metrics</h2>
         <p className="text-slate-500 text-sm">
-          Provide your details to calculate your variety-safe meal plan.
+          Provide your details to build your food dashboard and progress goals.
         </p>
       </header>
 
@@ -127,6 +147,26 @@ export const GoalForm = () => {
           </select>
         </div>
 
+        <div className="flex flex-col gap-2">
+          <label
+            htmlFor="calorieGoal"
+            className="text-sm font-semibold text-slate-700"
+          >
+            Calorie Goal (kcal)
+          </label>
+          <input
+            required
+            type="number"
+            id="calorieGoal"
+            name="calorieGoal"
+            value={formData.calorieGoal}
+            onChange={handleChange}
+            disabled={isSubmitting}
+            placeholder="e.g. 2100"
+            className="h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+          />
+        </div>
+
         <button
           type="submit"
           disabled={isSubmitting}
@@ -138,7 +178,7 @@ export const GoalForm = () => {
               Generating...
             </>
           ) : (
-            "Generate My Plan"
+            isEditing ? "Save Goals & View Dashboard" : "Build My Dashboard"
           )}
         </button>
       </form>
