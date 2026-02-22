@@ -5,33 +5,53 @@ export interface Food {
   calories: number;
   image_url: string;
   cuisine: string;
+  recipe: {
+    ingredients: string[];
+    steps: string[];
+  };
+}
+
+export interface DayPlan {
+  day: string;
+  meals: Food[];
 }
 
 interface DashboardProps {
-  selectedMeals: Food[];
+  selectedWeek: DayPlan[];
+  activeDayIndex: number;
   dailyGoal: number;
   calorieTotal: number;
   cuisineVarietyScore: number;
-  onShuffle: () => void; // Trigger Gemini again
+  onSelectDay: (dayIndex: number) => void;
+  onShuffleWeek: () => void;
+  onShuffleDay: () => void;
   onSwapMeal: (mealIndex: number) => void;
   onEditGoals: () => void;
   onResetAllData: () => void;
 }
 
 export const MealDashboard = ({
-  selectedMeals,
+  selectedWeek,
+  activeDayIndex,
   dailyGoal,
   calorieTotal,
   cuisineVarietyScore,
-  onShuffle,
+  onSelectDay,
+  onShuffleWeek,
+  onShuffleDay,
   onSwapMeal,
   onEditGoals,
   onResetAllData,
 }: DashboardProps) => {
+  const activeDay = selectedWeek[activeDayIndex];
   const calorieProgress = Math.min(
     Math.round((calorieTotal / dailyGoal) * 100),
     100,
   );
+
+  if (!activeDay) {
+    return null;
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
@@ -99,19 +119,43 @@ export const MealDashboard = ({
         </div>
       </div>
 
+      <div className="mb-8">
+        <p className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-3 text-center">
+          Weekly Plan
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {selectedWeek.map((dayPlan, dayIndex) => (
+            <button
+              key={dayPlan.day}
+              type="button"
+              onClick={() => onSelectDay(dayIndex)}
+              className={`px-3 py-2 text-sm font-semibold rounded-xl transition-colors ${
+                dayIndex === activeDayIndex
+                  ? "bg-indigo-600 text-white"
+                  : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              {dayPlan.day}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-6 text-center">
+        <h3 className="text-xl font-bold text-slate-900">{activeDay.day}</h3>
+        <p className="text-sm text-slate-500">Meals and recipes for this day</p>
+      </div>
+
       {/* The 3-Meal Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {selectedMeals.map((food, index) => (
+        {activeDay.meals.map((food, index) => (
           <div
             key={food.id}
             className="group relative bg-white rounded-3xl p-4 shadow-xl shadow-slate-200/50 border border-slate-100 hover:scale-[1.02] transition-transform"
           >
             <div className="relative h-56 w-full mb-6 rounded-2xl overflow-hidden bg-slate-100">
               <img
-                src={
-                  food.image_url ||
-                  "https://images.unsplash.com/photo-1546069901-ba9599a7e63c"
-                }
+                src={food.image_url}
                 className="w-full h-full object-cover transition-transform group-hover:scale-110"
                 alt={food.name}
               />
@@ -143,21 +187,50 @@ export const MealDashboard = ({
                   Change Food
                 </button>
               </div>
+
+              <div className="mt-5 border-t border-slate-200 pt-4">
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-2">
+                  Ingredients
+                </p>
+                <ul className="list-disc list-inside text-sm text-slate-700 space-y-1">
+                  {food.recipe.ingredients.map((ingredient) => (
+                    <li key={ingredient}>{ingredient}</li>
+                  ))}
+                </ul>
+
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-500 mt-4 mb-2">
+                  Steps
+                </p>
+                <ol className="list-decimal list-inside text-sm text-slate-700 space-y-1">
+                  {food.recipe.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
       {/* The "Anti-Mundane" Shuffle Button */}
-      <div className="mt-16 flex justify-center">
+      <div className="mt-16 flex flex-wrap justify-center gap-3">
         <button
-          onClick={onShuffle}
+          onClick={onShuffleDay}
+          className="group flex items-center gap-3 bg-slate-700 text-white px-8 py-4 rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-2xl shadow-slate-200"
+        >
+          <span className="group-hover:rotate-180 transition-transform duration-500">
+            📅
+          </span>
+          Regenerate This Day
+        </button>
+        <button
+          onClick={onShuffleWeek}
           className="group flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-2xl shadow-indigo-200"
         >
           <span className="group-hover:rotate-180 transition-transform duration-500">
             🔄
           </span>
-          I'm Bored, Regenerate Plan
+          I'm Bored, Regenerate Week
         </button>
       </div>
     </div>

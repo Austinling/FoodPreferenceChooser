@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { GoalForm, type GoalProfile } from "./GoalForm";
-import { MealDashboard, type Food } from "./MealDashboard";
+import { MealDashboard, type DayPlan, type Food } from "./MealDashboard";
+import { requestMealPlanFromBackend } from "./aiService";
 
 const STORAGE_KEY = "food-chooser-dashboard-state";
 
@@ -12,104 +13,6 @@ const defaultGoalProfile: GoalProfile = {
   gender: "male",
   calorieGoal: "",
 };
-
-const breakfastOptions: Food[] = [
-  {
-    id: 101,
-    name: "Greek Yogurt Bowl",
-    calories: 390,
-    image_url:
-      "https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Mediterranean",
-  },
-  {
-    id: 102,
-    name: "Avocado Egg Toast",
-    calories: 420,
-    image_url:
-      "https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Western",
-  },
-  {
-    id: 103,
-    name: "Berry Oatmeal",
-    calories: 360,
-    image_url:
-      "https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Nordic",
-  },
-];
-
-const lunchOptions: Food[] = [
-  {
-    id: 201,
-    name: "Chicken Burrito Bowl",
-    calories: 640,
-    image_url:
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Mexican",
-  },
-  {
-    id: 202,
-    name: "Salmon Quinoa Plate",
-    calories: 610,
-    image_url:
-      "https://images.unsplash.com/photo-1467003909585-2f8a72700288?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Modern",
-  },
-  {
-    id: 203,
-    name: "Turkey Hummus Wrap",
-    calories: 560,
-    image_url:
-      "https://images.unsplash.com/photo-1505576399279-565b52d4ac71?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Middle Eastern",
-  },
-];
-
-const dinnerOptions: Food[] = [
-  {
-    id: 301,
-    name: "Teriyaki Tofu Rice Bowl",
-    calories: 670,
-    image_url:
-      "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Japanese",
-  },
-  {
-    id: 302,
-    name: "Pesto Chicken Pasta",
-    calories: 720,
-    image_url:
-      "https://images.unsplash.com/photo-1621996346565-e3dbc646d9a9?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Italian",
-  },
-  {
-    id: 303,
-    name: "Lentil Curry Plate",
-    calories: 630,
-    image_url:
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=1200&q=80",
-    cuisine: "Indian",
-  },
-];
-
-const mealOptions = [breakfastOptions, lunchOptions, dinnerOptions];
-
-const randomFrom = (options: Food[], excludeId?: number) => {
-  const filtered =
-    excludeId === undefined
-      ? options
-      : options.filter((item) => item.id !== excludeId);
-  const source = filtered.length > 0 ? filtered : options;
-  const index = Math.floor(Math.random() * source.length);
-  return source[index];
-};
-
-const buildPlan = (current?: Food[]) =>
-  mealOptions.map((options, index) =>
-    randomFrom(options, current?.[index]?.id),
-  );
 
 const calculateDailyGoal = ({ weight, height, age, gender }: GoalProfile) => {
   const numericWeight = Number(weight);
@@ -127,7 +30,8 @@ const calculateDailyGoal = ({ weight, height, age, gender }: GoalProfile) => {
 
 type PersistedAppState = {
   dailyGoal: number;
-  selectedMeals: Food[];
+  selectedWeek: DayPlan[];
+  activeDayIndex: number;
   goalProfile: GoalProfile;
   currentView: "form" | "dashboard";
 };
@@ -158,7 +62,27 @@ const isValidFood = (value: unknown): value is Food => {
     typeof food.name === "string" &&
     typeof food.calories === "number" &&
     typeof food.image_url === "string" &&
-    typeof food.cuisine === "string"
+    typeof food.cuisine === "string" &&
+    typeof food.recipe === "object" &&
+    food.recipe !== null &&
+    Array.isArray(food.recipe.ingredients) &&
+    food.recipe.ingredients.every((item) => typeof item === "string") &&
+    Array.isArray(food.recipe.steps) &&
+    food.recipe.steps.every((item) => typeof item === "string")
+  );
+};
+
+const isValidDayPlan = (value: unknown): value is DayPlan => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const dayPlan = value as DayPlan;
+  return (
+    typeof dayPlan.day === "string" &&
+    Array.isArray(dayPlan.meals) &&
+    dayPlan.meals.length === 3 &&
+    dayPlan.meals.every(isValidFood)
   );
 };
 
@@ -170,28 +94,35 @@ const readPersistedState = (): PersistedAppState | null => {
     }
 
     const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
-    const hasValidMeals =
-      Array.isArray(parsed.selectedMeals) &&
-      parsed.selectedMeals.length === 3 &&
-      parsed.selectedMeals.every(isValidFood);
+    const hasValidWeek =
+      Array.isArray(parsed.selectedWeek) &&
+      parsed.selectedWeek.length === 7 &&
+      parsed.selectedWeek.every(isValidDayPlan);
     const hasValidView =
       parsed.currentView === "form" || parsed.currentView === "dashboard";
+    const hasValidDayIndex =
+      typeof parsed.activeDayIndex === "number" &&
+      parsed.activeDayIndex >= 0 &&
+      parsed.activeDayIndex < 7;
 
     if (
       typeof parsed.dailyGoal !== "number" ||
       !isValidGoalProfile(parsed.goalProfile) ||
-      !hasValidMeals ||
-      !hasValidView
+      !hasValidWeek ||
+      !hasValidView ||
+      !hasValidDayIndex
     ) {
       return null;
     }
 
-    const validatedMeals = parsed.selectedMeals as Food[];
+    const validatedWeek = parsed.selectedWeek as DayPlan[];
+    const validatedActiveDayIndex = parsed.activeDayIndex as number;
     const validatedView = parsed.currentView as "form" | "dashboard";
 
     return {
       dailyGoal: parsed.dailyGoal,
-      selectedMeals: validatedMeals,
+      selectedWeek: validatedWeek,
+      activeDayIndex: validatedActiveDayIndex,
       goalProfile: parsed.goalProfile,
       currentView: validatedView,
     };
@@ -205,8 +136,11 @@ function App() {
     readPersistedState(),
   );
   const [dailyGoal, setDailyGoal] = useState(initialState?.dailyGoal ?? 2100);
-  const [selectedMeals, setSelectedMeals] = useState<Food[]>(
-    initialState?.selectedMeals ?? buildPlan(),
+  const [selectedWeek, setSelectedWeek] = useState<DayPlan[]>(
+    initialState?.selectedWeek ?? [],
+  );
+  const [activeDayIndex, setActiveDayIndex] = useState(
+    initialState?.activeDayIndex ?? 0,
   );
   const [goalProfile, setGoalProfile] = useState<GoalProfile>(
     initialState?.goalProfile ?? defaultGoalProfile,
@@ -215,43 +149,90 @@ function App() {
     initialState?.currentView ?? "form",
   );
 
+  const activeDayMeals = selectedWeek[activeDayIndex]?.meals ?? [];
+
   const calorieTotal = useMemo(
-    () => selectedMeals.reduce((sum, meal) => sum + meal.calories, 0),
-    [selectedMeals],
+    () => activeDayMeals.reduce((sum, meal) => sum + meal.calories, 0),
+    [activeDayMeals],
   );
 
   const uniqueCuisineCount = useMemo(
-    () => new Set(selectedMeals.map((meal) => meal.cuisine)).size,
-    [selectedMeals],
+    () => new Set(activeDayMeals.map((meal) => meal.cuisine)).size,
+    [activeDayMeals],
   );
 
-  const handleGeneratePlan = (profile: GoalProfile) => {
+  const handleGeneratePlan = async (profile: GoalProfile) => {
     const manualGoal = Number(profile.calorieGoal);
+    const generatedWeek = await requestMealPlanFromBackend(profile);
+
     setGoalProfile(profile);
     setDailyGoal(manualGoal > 0 ? manualGoal : calculateDailyGoal(profile));
-    setSelectedMeals(buildPlan());
+    setSelectedWeek(generatedWeek);
+    setActiveDayIndex(0);
     setCurrentView("dashboard");
   };
 
-  const handleShuffle = () => {
-    setSelectedMeals((current) => buildPlan(current));
+  const handleShuffleWeek = async () => {
+    try {
+      const generatedWeek = await requestMealPlanFromBackend(goalProfile);
+      setSelectedWeek(generatedWeek);
+    } catch (error) {
+      console.error("Could not regenerate meal plan", error);
+    }
   };
 
-  const handleSwapMeal = (mealIndex: number) => {
-    setSelectedMeals((current) => {
-      const updated = [...current];
-      updated[mealIndex] = randomFrom(
-        mealOptions[mealIndex],
-        current[mealIndex].id,
-      );
-      return updated;
-    });
+  const handleShuffleDay = async () => {
+    try {
+      const generatedWeek = await requestMealPlanFromBackend(goalProfile);
+      setSelectedWeek((current) => {
+        if (current.length !== 7 || generatedWeek.length !== 7) {
+          return generatedWeek;
+        }
+
+        const updated = [...current];
+        updated[activeDayIndex] = generatedWeek[activeDayIndex];
+        return updated;
+      });
+    } catch (error) {
+      console.error("Could not regenerate day", error);
+    }
+  };
+
+  const handleSwapMeal = async (mealIndex: number) => {
+    try {
+      const generatedWeek = await requestMealPlanFromBackend(goalProfile);
+      setSelectedWeek((current) => {
+        if (current.length !== 7 || generatedWeek.length !== 7) {
+          return generatedWeek;
+        }
+
+        const updated = [...current];
+        const currentDay = updated[activeDayIndex];
+        const generatedDay = generatedWeek[activeDayIndex];
+
+        if (!currentDay || !generatedDay) {
+          return generatedWeek;
+        }
+
+        const nextMeals = [...currentDay.meals];
+        nextMeals[mealIndex] = generatedDay.meals[mealIndex];
+        updated[activeDayIndex] = {
+          ...currentDay,
+          meals: nextMeals,
+        };
+
+        return updated;
+      });
+    } catch (error) {
+      console.error("Could not swap meal", error);
+    }
   };
 
   const handleResetAllData = () => {
     localStorage.removeItem(STORAGE_KEY);
     setDailyGoal(2100);
-    setSelectedMeals(buildPlan());
+    setSelectedWeek([]);
+    setActiveDayIndex(0);
     setGoalProfile(defaultGoalProfile);
     setCurrentView("form");
   };
@@ -259,13 +240,14 @@ function App() {
   useEffect(() => {
     const stateToPersist: PersistedAppState = {
       dailyGoal,
-      selectedMeals,
+      selectedWeek,
+      activeDayIndex,
       goalProfile,
       currentView,
     };
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToPersist));
-  }, [currentView, dailyGoal, goalProfile, selectedMeals]);
+  }, [activeDayIndex, currentView, dailyGoal, goalProfile, selectedWeek]);
 
   return (
     <main className="min-h-screen bg-slate-50 py-10 px-4">
@@ -277,11 +259,14 @@ function App() {
         />
       ) : (
         <MealDashboard
-          selectedMeals={selectedMeals}
+          selectedWeek={selectedWeek}
+          activeDayIndex={activeDayIndex}
           dailyGoal={dailyGoal}
           calorieTotal={calorieTotal}
           cuisineVarietyScore={Math.round((uniqueCuisineCount / 3) * 100)}
-          onShuffle={handleShuffle}
+          onSelectDay={setActiveDayIndex}
+          onShuffleWeek={handleShuffleWeek}
+          onShuffleDay={handleShuffleDay}
           onSwapMeal={handleSwapMeal}
           onEditGoals={() => setCurrentView("form")}
           onResetAllData={handleResetAllData}

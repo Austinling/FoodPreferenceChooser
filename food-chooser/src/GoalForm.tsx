@@ -9,7 +9,7 @@ export interface GoalProfile {
 }
 
 interface GoalFormProps {
-  onGeneratePlan: (profile: GoalProfile) => void;
+  onGeneratePlan: (profile: GoalProfile) => Promise<void>;
   initialProfile: GoalProfile;
   isEditing?: boolean;
 }
@@ -19,33 +19,50 @@ export const GoalForm = ({
   initialProfile,
   isEditing = false,
 }: GoalFormProps) => {
+  const COOLDOWN_SECONDS = 10;
   const [formData, setFormData] = useState<GoalProfile>(initialProfile);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
   useEffect(() => {
     setFormData(initialProfile);
   }, [initialProfile]);
 
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      setCooldownSeconds((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [cooldownSeconds]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
-    // The data you'll send to the Flask dev's endpoint
-    console.log("Submitting to Flask:", formData);
+    if (isSubmitting || cooldownSeconds > 0) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError("");
 
     try {
-      // Example of the fetch call to the Python backend
-      // const response = await fetch('http://localhost:5000/api/profile', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData),
-      // });
-      await new Promise((resolve) => setTimeout(resolve, 700));
-      onGeneratePlan(formData);
+      await onGeneratePlan(formData);
     } catch (err) {
-      console.error("Connection to Flask failed", err);
+      console.error("Could not generate meal plan", err);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Could not fetch meal plan from backend.";
+      setSubmitError(message);
     } finally {
       setIsSubmitting(false);
+      setCooldownSeconds(COOLDOWN_SECONDS);
     }
   };
 
@@ -65,6 +82,11 @@ export const GoalForm = ({
         <p className="text-slate-500 text-sm">
           Provide your details to build your food dashboard and progress goals.
         </p>
+        {submitError && (
+          <p className="mt-2 text-sm font-medium text-rose-600">
+            {submitError}
+          </p>
+        )}
       </header>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -169,7 +191,7 @@ export const GoalForm = ({
 
         <button
           type="submit"
-          disabled={isSubmitting}
+          disabled={isSubmitting || cooldownSeconds > 0}
           className="mt-4 h-14 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-indigo-100 transition-all active:scale-[0.98] inline-flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
@@ -177,6 +199,8 @@ export const GoalForm = ({
               <span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
               Generating...
             </>
+          ) : cooldownSeconds > 0 ? (
+            `Please wait ${cooldownSeconds}s`
           ) : isEditing ? (
             "Save Goals & View Dashboard"
           ) : (
