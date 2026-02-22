@@ -177,8 +177,10 @@ export const GoalForm = ({
               <span className="inline-block h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
               Generating...
             </>
+          ) : isEditing ? (
+            "Save Goals & View Dashboard"
           ) : (
-            isEditing ? "Save Goals & View Dashboard" : "Build My Dashboard"
+            "Build My Dashboard"
           )}
         </button>
       </form>
